@@ -15,21 +15,21 @@ This folder contains the CLI entrypoint and the small, separated modules it uses
 
 ```mermaid
 flowchart TD
-  A[compute_scorecard.py\nCLI entrypoint] -->|read_json(spec)| B[scorecard_core.py\ncore helpers + loaders]
+  A[compute_scorecard.py<br/>CLI entrypoint] -->|read_json(spec)| B[scorecard_core.py<br/>core helpers + loaders]
   A -->|read_json(sites.json)| B
-  A --> C[scorecard_metric_registry.py\ndefault metric list + selection]
-  C --> D[scorecard_metrics.py\nmetric_* implementations]
+  A --> C[scorecard_metric_registry.py<br/>default metric list + selection]
+  C --> D[scorecard_metrics.py<br/>metric_* implementations]
   D --> B
-  A -->|--no-figures disables| E[scorecard_plots.py\nPNG plotting]
+  A -->|--no-figures disables| E[scorecard_plots.py<br/>PNG plotting]
   E --> B
 
-  F[Spec JSON\n(e.g. scorecard_spec.example.json)] --> A
+  F[Spec JSON<br/>(e.g. scorecard_spec.example.json)] --> A
   G[sites.json] --> A
 
   %% Data sources (paths come from the spec + sites.json)
-  H[(Model NetCDF files\n{data_root}/{run_id}_*_{site}.nc)] --> B
-  I[(Obs BLH NetCDF\n{dir_obs}/{obs_subdir}/{obs_name}.nc)] --> B
-  J[(Obs CO2 tower CSV\n{dir_obs}/{obs_subdir}/*CO2*.csv)] --> B
+  H[(Model NetCDF files<br/>{data_root}/{run_id}_*_{site}.nc)] --> B
+  I[(Obs BLH NetCDF<br/>{dir_obs}/{obs_subdir}/{obs_name}.nc)] --> B
+  J[(Obs CO2 tower CSV<br/>{dir_obs}/{obs_subdir}/*CO2*.csv)] --> B
 
   %% Outputs
   A --> K[(Terminal table)]
