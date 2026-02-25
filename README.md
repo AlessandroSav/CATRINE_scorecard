@@ -120,6 +120,10 @@ python scripts/compute_scorecard.py --no-figures
 
 ### Scorecard PNG
 
+Example scorecard:
+
+![Example scorecard (Cabauw)](docs/scorecard_cabauw_itvc_iyw7_20220515.png)
+
 Saved in `fig_dir` (default: `figures/` under the repo root) with the exact naming pattern:
 
 - `scorecard_{site}_{ctrl}_{exp}_{start_date}.png`
@@ -127,6 +131,10 @@ Saved in `fig_dir` (default: `figures/` under the repo root) with the exact nami
 Where `start_date` is derived from `start` formatted as `YYYYMMDD`.
 
 ### Diagnostic PNG plots
+
+Example:
+
+![Example CO2 gradients (Cabauw)](docs/co2_mean_profiles_cabauw_itvc_iyw7_20220515.png)
 
 Also saved in `fig_dir` (filenames include `{site}_{ctrl}_{exp}_{start_date}`).
 
