@@ -1,0 +1,13 @@
+# Requested ignores
+figures/
+scorecard_spec_cabauw_2022.json
+scripts/testing_ideas.ipynb
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+.env/

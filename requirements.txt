@@ -1,0 +1,23 @@
+# Core dependencies for running the CATRINE scorecard
+#
+# Create a venv and install:
+#   python3 -m venv .venv
+#   source .venv/bin/activate
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+
+numpy
+pandas
+xarray
+
+# NetCDF backends (needed to open the model/obs NetCDF files)
+netCDF4
+h5netcdf
+h5py
+
+# Computation helpers
+scipy
+dask
+
+# Figures
+matplotlib

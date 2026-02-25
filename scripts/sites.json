@@ -1,0 +1,13 @@
+{
+  "cabauw": {
+    "name": "cabauw",
+    "lat": 51.971,
+    "lon": 4.927,
+    "obs_subdir": "Cesar",
+    "obs_name": "eprofile_L2B_STRATFINDER_cabauw_chm15k-A_v01_2022_15min",
+    "levels": [27, 67, 127, 207]
+  },
+  "ATTO": {
+    "name": "ATTO"
+  }
+}

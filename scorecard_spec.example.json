@@ -1,0 +1,42 @@
+{
+  "_comments": {
+    "control": "Required. Control run ID; used to match model files like {data_root}/{control}_*_srf_t0_{site}.nc and {data_root}/{control}_*_z_t0_{site}.nc",
+    "experiment": "Required. Experiment run ID; same file patterns as control",
+    "start": "Required. Inclusive start time (ISO-like string). Used to slice both model and obs data.",
+    "end": "Required. Inclusive end time (ISO-like string). Used to slice both model and obs data.",
+    "site": "Required. Must be a key in scripts/sites.json",
+    "data_root": "Required. Folder containing model NetCDF files for control/experiment.",
+    "dir_obs": "Required. Folder containing observation subfolders/files as configured in scripts/sites.json.",
+    "fig_dir": "Optional. Output directory for PNGs. If relative, it is resolved relative to the repo root.",
+    "out": "Optional. If set, writes the score table to this path (.csv or .json). Other extensions default to CSV.",
+    "bias_mode": "Optional. 'abs' (default) compares |bias|; 'signed' compares signed bias.",
+    "daytime": "Optional. [start_hour, end_hour) in local hour-of-day, default [7, 20].",
+    "nighttime": "Optional. [start_hour, end_hour) in local hour-of-day, default [20, 7] (wraps over midnight).",
+    "stream/mars_type/time/mars_margin_deg/steps/number/grid/force_download": "Currently ignored by scripts/compute_scorecard.py (will be needed once the tool allows for mars extraction)."
+  },
+
+  "control": "<CTRL_RUN_ID>",
+  "experiment": "<EXPERIMENT_RUN_ID>",
+
+  "start": "2022-05-15T00:00",
+  "end": "2022-05-21T23:59",
+  "site": "cabauw",
+
+  "data_root": "/path/to/model/netcdf/root",
+  "dir_obs": "/path/to/observations/root",
+  "fig_dir": "figures",
+  "out": null,
+
+  "bias_mode": "abs",
+  "daytime": [7,20],
+  "nighttime": [20,7],
+
+  "stream": "<optional/ignored_by_compute_scorecard>",
+  "mars_type": "<optional/ignored_by_compute_scorecard>",
+  "time": "00:00:00",
+  "mars_margin_deg": 0.2,
+  "steps": "0-24",
+  "number": null,
+  "grid": "0.2/0.2",
+  "force_download": false
+}
