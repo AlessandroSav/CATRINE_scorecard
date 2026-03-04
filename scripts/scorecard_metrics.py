@@ -86,3 +86,40 @@ def metric_co2_vertical_gradient(ctx: Context, *, hours_key: str) -> dict[str, f
 	exp_g = exp_g.where(valid, drop=True)
 
 	return compute_bias_rmse_delta(obs_g, ctrl_g, exp_g, bias_mode=ctx.spec.get("bias_mode", "abs"))
+
+def metric_co2_surface_flux(ctx: Context) -> dict[str, float]:
+	if ctx.obs_co2_srf_flx is None or ctx.ctrl_co2_srf_flx is None or ctx.exp_co2_srf_flx is None:
+		raise ValueError("CO2 surface flux metric requires obs/model surface flux datasets to be loaded")
+	obs, ctrl, exp = align_hourly(ctx.obs_co2_srf_flx, ctx.ctrl_co2_srf_flx, ctx.exp_co2_srf_flx)
+	obs_surf, ctrl_surf, exp_surf = xr.align(obs, ctrl, exp, join="inner")
+	valid = np.isfinite(obs_surf) & np.isfinite(ctrl_surf) & np.isfinite(exp_surf)
+	obs_surf = obs_surf.where(valid, drop=True)
+	ctrl_surf = ctrl_surf.where(valid, drop=True)
+	exp_surf = exp_surf.where(valid, drop=True)
+
+	return compute_bias_rmse_delta(obs_surf, ctrl_surf, exp_surf, bias_mode=ctx.spec.get("bias_mode", "abs"))
+
+def metric_co2_flux(ctx: Context, *, level_m: float) -> dict[str, float]:
+	if ctx.obs_co2_flx is None or ctx.ctrl_co2_flx is None or ctx.exp_co2_flx is None:
+		raise ValueError("CO2 flux metric requires obs/model flux datasets to be loaded")
+	obs, ctrl, exp = align_hourly(ctx.obs_co2_flx, ctx.ctrl_co2_flx, ctx.exp_co2_flx, label="right")
+
+	def _select_or_interp_height(da: xr.DataArray, target_m: float) -> xr.DataArray:
+		if "height" not in da.dims:
+			return da
+		# Prefer exact selection if the target is present. This avoids xarray/scipy
+		# interpolation propagating NaNs from other (possibly missing) height levels.
+		heights = np.asarray(da["height"].values, dtype=float)
+		target_m = float(target_m)
+		if heights.size:
+			idx = int(np.argmin(np.abs(heights - target_m)))
+			if np.isclose(heights[idx], target_m, atol=1e-6, rtol=0.0):
+				return da.sel(height=float(heights[idx]))
+		# If interpolation is needed, drop any levels that are entirely missing.
+		da2 = da.dropna(dim="height", how="all")
+		return da2.interp(height=target_m)
+
+	obs_l = _select_or_interp_height(obs, level_m)
+	ctrl_l = _select_or_interp_height(ctrl, level_m)
+	exp_l = _select_or_interp_height(exp, level_m)
+	return compute_bias_rmse_delta(obs_l, ctrl_l, exp_l, bias_mode=ctx.spec.get("bias_mode", "abs"))

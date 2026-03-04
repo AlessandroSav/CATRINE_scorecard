@@ -19,7 +19,18 @@ import os
 import numpy as np
 import pandas as pd
 
-from scorecard_core import Context, align_hourly, load_model_blh, load_model_co2, load_obs_blh, load_obs_co2, read_json
+from scorecard_core import (
+	Context,
+	load_model_blh,
+	load_model_co2,
+	load_model_co2_flx,
+	load_model_co2_srf_flx,
+	load_obs_blh,
+	load_obs_co2,
+	load_obs_co2_flx,
+	load_obs_co2_srf_flx,
+	read_json,
+)
 from scorecard_metric_registry import build_default_metrics, list_metric_names, select_metrics
 
 
@@ -67,6 +78,14 @@ def main() -> None:
 			print(n)
 		return
 
+	selected_names = None
+	if args.metrics:
+		selected_names = [p.strip() for p in args.metrics.split(",")]
+	metrics = select_metrics(metrics, names=selected_names)
+	metric_names = {m.name for m in metrics}
+	need_surface_flux = "co2_surface_flux" in metric_names
+	need_flux_profile = any(n.startswith("co2_flux") for n in metric_names)
+
 	start = spec["start"]
 	end = spec["end"]
 	data_root = spec["data_root"]
@@ -85,10 +104,28 @@ def main() -> None:
 	ctrl_blh = load_model_blh(data_root, control, site, start, end)
 	exp_blh = load_model_blh(data_root, experiment, site, start, end)
 
+	obs_co2_srf_flx = None
+	ctrl_co2_srf_flx = None
+	exp_co2_srf_flx = None
+	if need_surface_flux:
+		obs_co2_srf_flx = load_obs_co2_srf_flx(dir_obs, site_cfg, start, end)
+		ctrl_co2_srf_flx = load_model_co2_srf_flx(data_root, control, site, start, end)
+		exp_co2_srf_flx = load_model_co2_srf_flx(data_root, experiment, site, start, end)
+
 	levels = [float(x) for x in (site_cfg.get("levels") or [])]
 	obs_co2 = load_obs_co2(dir_obs, site_cfg, start, end)
 	ctrl_co2 = load_model_co2(data_root, control, site, levels, start, end)
 	exp_co2 = load_model_co2(data_root, experiment, site, levels, start, end)
+
+	obs_co2_flx = None
+	ctrl_co2_flx = None
+	exp_co2_flx = None
+	if need_flux_profile:
+		flux_levels = site_cfg.get("obs_co2_flx_levels") or site_cfg.get("flx_levels") or levels
+		flux_levels = [float(x) for x in (flux_levels or [])]
+		obs_co2_flx = load_obs_co2_flx(dir_obs, site_cfg, start, end)
+		ctrl_co2_flx = load_model_co2_flx(data_root, control, site, flux_levels, start, end)
+		exp_co2_flx = load_model_co2_flx(data_root, experiment, site, flux_levels, start, end)
 
 	ctx = Context(
 		spec=spec,
@@ -99,12 +136,13 @@ def main() -> None:
 		obs_co2=obs_co2,
 		ctrl_co2=ctrl_co2,
 		exp_co2=exp_co2,
+		obs_co2_srf_flx=obs_co2_srf_flx,
+		ctrl_co2_srf_flx=ctrl_co2_srf_flx,
+		exp_co2_srf_flx=exp_co2_srf_flx,
+		obs_co2_flx=obs_co2_flx,
+		ctrl_co2_flx=ctrl_co2_flx,
+		exp_co2_flx=exp_co2_flx,
 	)
-
-	selected_names = None
-	if args.metrics:
-		selected_names = [p.strip() for p in args.metrics.split(",")]
-	metrics = select_metrics(metrics, names=selected_names)
 
 	rows: list[dict[str, object]] = []
 	for m in metrics:
@@ -129,7 +167,9 @@ def main() -> None:
 		from scorecard_plots import (
 			ensure_fig_dir,
 			save_blh_plots,
+			save_co2_flux_timeseries,
 			save_co2_mean_profiles,
+			save_co2_surface_flux_timeseries,
 			save_co2_timeseries_and_diurnal,
 			save_scorecard_png,
 		)
@@ -146,6 +186,13 @@ def main() -> None:
 		level_plot = levels[1] if len(levels) > 1 else (levels[0] if levels else 67.0)
 		_ = save_co2_timeseries_and_diurnal(ctx, level_m=level_plot, fig_dir=fig_dir)
 		_ = save_co2_mean_profiles(ctx, fig_dir=fig_dir)
+
+		# Additional diagnostics (mirrors the notebook snippets); will be skipped
+		# automatically when the corresponding datasets weren't loaded.
+		_ = save_co2_flux_timeseries(ctx, level_m=180.0, fig_dir=fig_dir)
+		_ = save_co2_flux_timeseries(ctx, level_m=5.0, fig_dir=fig_dir)
+
+		_ = save_co2_surface_flux_timeseries(ctx, fig_dir=fig_dir)
 
 	out = spec.get("out")
 	if out:

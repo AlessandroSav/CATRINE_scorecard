@@ -4,7 +4,10 @@
     "lat": 51.971,
     "lon": 4.927,
     "obs_subdir": "Cesar",
-    "obs_name": "eprofile_L2B_STRATFINDER_cabauw_chm15k-A_v01_2022_15min",
+    "obs_blh_name": "eprofile_L2B_STRATFINDER_cabauw_chm15k-A_v01_2022_15min",
+    "obs_co2_srf_flx_name": "cesar_surface_flux",
+    "obs_co2_flx_name": "cesar_tower_flux",
+    "obs_co2_flx_levels": [5, 60, 100, 180],
     "levels": [27, 67, 127, 207]
   },
   "ATTO": {

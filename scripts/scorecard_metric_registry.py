@@ -20,18 +20,24 @@ from scorecard_metrics import (
 	metric_co2_diurnal_range,
 	metric_co2_level,
 	metric_co2_vertical_gradient,
+	metric_co2_surface_flux,
+	metric_co2_flux,
 )
 
 
 def build_default_metrics(site_cfg: dict) -> list[Metric]:
 	levels = site_cfg.get("levels") or []
 	levels = [float(x) for x in levels]
+	flux_levels = site_cfg.get("obs_co2_flx_levels") or site_cfg.get("flx_levels") or []
+	flux_levels = [float(x) for x in flux_levels]
 
-	level_low = levels[0] if levels else 27.0
-	level_high = levels[-1] if levels else 207.0
+	level_low = levels[0] 
+	level_high = levels[-1]
 	level_mid = levels[1] if len(levels) > 1 else level_low
 
 	# This explicit list is the scorecard “definition”.
+	flux_level_low = min(flux_levels) if flux_levels else level_low
+	flux_level_high = max(flux_levels) if flux_levels else level_high
 	return [
 		Metric("blh_day", "m", metric_blh_day),
 		Metric("blh_night", "m", metric_blh_night),
@@ -41,9 +47,13 @@ def build_default_metrics(site_cfg: dict) -> list[Metric]:
 		Metric(f"co2_{int(level_high)}m", "PPM", lambda ctx: metric_co2_level(ctx, level_m=level_high, hours_key="daytime")),
 		Metric("co2_gradient_day", "PPM/m", lambda ctx: metric_co2_vertical_gradient(ctx, hours_key="daytime")),
 		Metric("co2_gradient_night", "PPM/m", lambda ctx: metric_co2_vertical_gradient(ctx, hours_key="nighttime")),
+		# Metric("co2_surface_flux", "PPM m/s", metric_co2_surface_flux),
+		Metric(f"co2_flux_{int(flux_level_low)}m", "PPM m/s", lambda ctx: metric_co2_flux(ctx, level_m=flux_level_low)),
+		Metric(f"co2_flux_{int(flux_level_high)}m", "PPM m/s", lambda ctx: metric_co2_flux(ctx, level_m=flux_level_high)),
+
 	]
 
-
+	
 def list_metric_names(metrics: Iterable[Metric]) -> list[str]:
 	return [m.name for m in metrics]
 

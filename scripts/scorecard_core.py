@@ -12,9 +12,12 @@ Metric definitions and metric lists live elsewhere.
 from __future__ import annotations
 
 import glob
+from importlib.metadata import files
 import json
 import os
+import re
 from dataclasses import dataclass
+from tracemalloc import start
 from typing import Callable, Literal
 
 import numpy as np
@@ -55,7 +58,9 @@ def _to_datetime_index(da: xr.DataArray) -> xr.DataArray:
 	if "time" not in da.coords and "time" not in da.dims:
 		return da
 	da = da.assign_coords(time=pd.to_datetime(da["time"].values, errors="coerce"))
-	return da.dropna(dim="time")
+	# With multi-dimensional arrays (e.g. height x time), dropping with the default
+	# how='any' would remove *every* timestep if any height is missing.
+	return da.dropna(dim="time", how="all")
 
 
 def prep_time_series(da: xr.DataArray) -> xr.DataArray:
@@ -103,12 +108,23 @@ def sel_time_of_day(
 	return obj.sel(time=mask)
 
 
-def align_hourly(*series: xr.DataArray, freq: str = "1h") -> tuple[xr.DataArray, ...]:
+
+def align_hourly(
+	*series: xr.DataArray,
+	freq: str = "1h",
+	label: Literal["left", "right"] | None = None,
+) -> tuple[xr.DataArray, ...]:
 	"""Prepare, resample, and align multiple time series on a common grid."""
-	prepped = [
-		prep_time_series(s).resample(time=freq).mean() if "time" in s.dims else prep_time_series(s)
-		for s in series
-	]
+	prepped: list[xr.DataArray] = []
+	for s in series:
+		sp = prep_time_series(s)
+		# xarray raises if you try to resample an empty time dimension.
+		if "time" in sp.dims and int(sp.sizes.get("time", 0)) > 0:
+			if label is None:
+				sp = sp.resample(time=freq).mean()
+			else:
+				sp = sp.resample(time=freq, label=label).mean()
+		prepped.append(sp)
 	aligned = xr.align(*prepped, join="inner")
 
 	valid = None
@@ -116,7 +132,10 @@ def align_hourly(*series: xr.DataArray, freq: str = "1h") -> tuple[xr.DataArray,
 		m = np.isfinite(s)
 		valid = m if valid is None else (valid & m)
 
-	return tuple(s.where(valid, drop=True) for s in aligned)
+	# Avoid drop=True here: dropping requires boolean indexing, which is not allowed
+	# with dask-backed boolean arrays. Keeping NaNs is fine because downstream
+	# reductions (mean/RMSE) are NaN-aware.
+	return tuple(s.where(valid) for s in aligned)
 
 
 def _pct_change(new: xr.DataArray, old: xr.DataArray) -> float:
@@ -216,10 +235,10 @@ def _open_by_coords(files: list[str]) -> xr.Dataset:
 
 def load_obs_blh(dir_obs: str, site_cfg: dict, start: str, end: str) -> xr.DataArray:
 	obs_subdir = site_cfg.get("obs_subdir")
-	obs_name = site_cfg.get("obs_name")
-	if not obs_subdir or not obs_name:
-		raise ValueError("Site config must define obs_subdir and obs_name for BLH observations")
-	path = os.path.join(dir_obs, obs_subdir, f"{obs_name}.nc")
+	obs_blh_name = site_cfg.get("obs_blh_name")
+	if not obs_subdir or not obs_blh_name:
+		raise ValueError("Site config must define obs_subdir and obs_blh_name for BLH observations")
+	path = os.path.join(dir_obs, obs_subdir, f"{obs_blh_name}.nc")
 	ds = xr.open_dataset(path).sel(time=slice(start, end))
 	if "MLH" not in ds:
 		raise KeyError(f"Expected variable 'MLH' in {path}")
@@ -233,6 +252,132 @@ def load_model_blh(data_root: str, run_id: str, site: str, start: str, end: str)
 		raise KeyError(f"Expected variable 'blh' in {files[0]}")
 	return prep_time_series(ds["blh"].rename(f"blh_{run_id}"))
 
+def load_obs_co2_srf_flx(dir_obs: str, site_cfg: dict, start: str, end: str) -> xr.DataArray:
+	obs_subdir = site_cfg.get("obs_subdir")
+	obs_co2_srf_flx_name = site_cfg.get("obs_co2_srf_flx_name")
+	if not obs_subdir or not obs_co2_srf_flx_name:
+		raise ValueError("Site config must define obs_subdir and obs_co2_srf_flx_name for CO2 surface flux observations")
+	datestamp = start[:4]  # Extract the year from the start date, e.g. "2022"
+	folder = os.path.join(dir_obs, obs_subdir)
+	pattern = os.path.join(folder, f"{obs_co2_srf_flx_name}*{datestamp}*.nc")
+	files = _require_files(pattern)
+	ds = _open_by_coords(files).sel(time=slice(start, end))
+	if "FC" not in ds:
+		raise KeyError(f"Expected variable 'FC' in {files[0]}")
+	return prep_time_series(ds["FC"].rename("co2_srf_flx_obs"))
+
+def load_model_co2_srf_flx(data_root: str, run_id: str, site: str, start: str, end: str) -> xr.DataArray:
+	files = _require_files(os.path.join(data_root, f"{run_id}_*_srf_t0_{site}.nc"))
+	ds = _open_by_coords(files).sel(time=slice(start, end))
+
+	if 'co2flx_tot' not in ds:
+		raise KeyError(f"Expected variable 'co2flx_tot' in {files[0]}")
+	da = (-ds["co2flx_tot"]).rename(f"co2_srf_flx_{run_id}")
+	return prep_time_series(da)
+
+def load_obs_co2_flx(dir_obs: str, site_cfg: dict, start: str, end: str) -> xr.DataArray:
+	obs_subdir = site_cfg.get("obs_subdir")
+	obs_co2_flx_name = site_cfg.get("obs_co2_flx_name")
+	if not obs_subdir or not obs_co2_flx_name:
+		raise ValueError("Site config must define obs_subdir and obs_co2_flx_name for CO2 flux observations")
+	datestamp = start[:4]
+	folder = os.path.join(dir_obs, obs_subdir)
+	pattern = os.path.join(folder, f"{obs_co2_flx_name}*{datestamp}*.nc")
+	files = _require_files(pattern)
+	obs_tower_ds = xr.open_mfdataset(files, combine="by_coords").sel(time=slice(start, end))
+
+	# Prefer the same approach as load_obs_co2: concat the requested height variables.
+	# For tower fluxes, heights often differ from CO2 profile levels, so allow an
+	# explicit list in the site config.
+	flux_levels = (
+		site_cfg.get("obs_co2_flx_levels")
+		or site_cfg.get("co2_flx_levels")
+		or site_cfg.get("flx_levels")
+		or []
+	)
+	levels_f = [float(x) for x in (flux_levels or (site_cfg.get("levels") or []))]
+
+	# Identify FC* variables before resampling so we can drop non-numeric/string vars.
+	all_fc_vars = [v for v in obs_tower_ds.data_vars if re.fullmatch(r"FC\d+", str(v))]
+
+	def _fc_var_for_height(h: float) -> str:
+		i = int(h)
+		# Common in CESAR files: FC005, FC060, ...
+		cand0 = f"FC{i:03d}"
+		if cand0 in obs_tower_ds.data_vars:
+			return cand0
+		cand1 = f"FC{i}"
+		return cand1
+
+	requested_vars = [_fc_var_for_height(h) for h in levels_f]
+	have_all_requested = bool(levels_f) and all(v in obs_tower_ds.data_vars for v in requested_vars)
+	vars_to_use = requested_vars if have_all_requested else all_fc_vars
+	if not vars_to_use:
+		available = list(obs_tower_ds.data_vars)
+		raise KeyError(
+			"Could not find any tower flux variables. Expected variables named like 'FC005'/'FC100'. "
+			f"Available variables include: {available[:30]}"
+		)
+
+	# Drop any non-FC variables so resampling mean doesn't choke on strings.
+	obs_tower_ds = obs_tower_ds[vars_to_use]
+
+	# Match the notebook logic: resample to hourly means (label on the right edge).
+	obs_tower_ds = obs_tower_ds.resample(time="1h", label="right").mean()
+
+	# If all requested vars exist, concat those exact heights (no interpolation).
+	if have_all_requested:
+		series = [obs_tower_ds[v] for v in requested_vars]
+		obs_fc = (
+			xr.concat(series, dim="height")
+			.assign_coords(height=("height", levels_f))
+			.sortby("height")
+			.rename("co2_flx_obs")
+		)
+		return prep_time_series(obs_fc)
+
+	# Newer CESAR tower flux files use per-height variables like FC100, FC180, ...
+	fc_vars: list[str] = []
+	heights_m: list[float] = []
+	for v in obs_tower_ds.data_vars:
+		m = re.fullmatch(r"FC(\d+)", str(v))
+		if not m:
+			continue
+		fc_vars.append(v)
+		heights_m.append(float(int(m.group(1))))
+
+	if fc_vars:
+		series = [obs_tower_ds[v] for v in fc_vars]
+		obs_fc = (
+			xr.concat(series, dim="height")
+			.assign_coords(height=("height", heights_m))
+			.sortby("height")
+			.rename("co2_flx_obs")
+		)
+	else:
+		available = list(obs_tower_ds.data_vars)
+		raise KeyError(
+			"Could not find tower flux variables named like 'FC005'/'FC100'. "
+			f"Available variables include: {available[:30]}"
+		)
+
+	obs_fc = prep_time_series(obs_fc)
+
+	# Interpolate to the requested flux levels (if provided) so downstream code can
+	# request levels even when obs heights differ slightly.
+	if "height" in obs_fc.dims and levels_f:
+		target = np.asarray(levels_f, dtype=float)
+		obs_fc = obs_fc.interp(height=target)
+
+	return obs_fc
+
+def load_model_co2_flx(data_root: str, run_id: str, site: str, levels: list[float], start: str, end: str) -> xr.DataArray:
+	files = _require_files(os.path.join(data_root, f"{run_id}_*_z_t0_{site}.nc"))
+	ds = _open_by_coords(files).sel(time=slice(start, end))
+	if "co2flx_diff" not in ds or "co2flx_conv" not in ds:
+		raise KeyError(f"Expected variables 'co2flx_diff' and 'co2flx_conv' in {files[0]}")
+	da = ((-ds["co2flx_diff"]) + (-ds["co2flx_conv"])).interp(height=np.asarray(levels, dtype=float)).rename(f"co2_flx_{run_id}")
+	return prep_time_series(da)
 
 def load_obs_co2(dir_obs: str, site_cfg: dict, start: str, end: str) -> xr.DataArray:
 	obs_subdir = site_cfg.get("obs_subdir")
@@ -284,9 +429,15 @@ class Metric:
 class Context:
 	spec: dict
 	site_cfg: dict
-	obs_blh: xr.DataArray
-	ctrl_blh: xr.DataArray
-	exp_blh: xr.DataArray
-	obs_co2: xr.DataArray
-	ctrl_co2: xr.DataArray
-	exp_co2: xr.DataArray
+	obs_blh: xr.DataArray | None = None
+	ctrl_blh: xr.DataArray | None = None
+	exp_blh: xr.DataArray | None = None
+	obs_co2: xr.DataArray | None = None
+	ctrl_co2: xr.DataArray | None = None
+	exp_co2: xr.DataArray | None = None
+	obs_co2_srf_flx: xr.DataArray | None = None
+	ctrl_co2_srf_flx: xr.DataArray | None = None
+	exp_co2_srf_flx: xr.DataArray | None = None
+	obs_co2_flx: xr.DataArray | None = None
+	ctrl_co2_flx: xr.DataArray | None = None
+	exp_co2_flx: xr.DataArray | None = None
