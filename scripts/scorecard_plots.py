@@ -130,8 +130,8 @@ def save_blh_plots(ctx: Context, *, fig_dir: str) -> list[str]:
 	# Time series
 	fig, ax = plt.subplots(figsize=(10, 4))
 	obs.plot(ax=ax, color="b", label="obs", marker="*", linestyle="-")
-	ctrl.plot(ax=ax, color="g", label="ctrl", marker="*", linestyle="-")
-	exp.plot(ax=ax, color="r", label="exp", marker="*", linestyle="-")
+	ctrl.plot(ax=ax, color="g", label=f"ctrl {ctx.spec['control']}", marker="*", linestyle="-")
+	exp.plot(ax=ax, color="r", label=f"exp {ctx.spec['experiment']}", marker="*", linestyle="-")
 	# add mean line
 	obs_mean = obs.mean("time")
 	ctrl_mean = ctrl.mean("time")
@@ -156,8 +156,8 @@ def save_blh_plots(ctx: Context, *, fig_dir: str) -> list[str]:
 
 	fig, ax = plt.subplots(figsize=(7, 4))
 	obs_.plot(ax=ax, x="hour", label="obs", color="b")
-	ctrl_.plot(ax=ax, x="hour", label="ctrl", color="g")
-	exp_.plot(ax=ax, x="hour", label="exp", color="r")
+	ctrl_.plot(ax=ax, x="hour", label=f"ctrl {ctx.spec['control']}", color="g")
+	exp_.plot(ax=ax, x="hour", label=f"exp {ctx.spec['experiment']}", color="r")
 	# add mean line
 	obs_mean = obs_.mean("hour")
 	ctrl_mean = ctrl_.mean("hour")
@@ -190,8 +190,8 @@ def save_co2_timeseries_and_diurnal(ctx: Context, *, level_m: float, fig_dir: st
 	exp_ = exp.sel(height=level_m)
 	fig, ax = plt.subplots(figsize=(10, 4))
 	obs_.plot(ax=ax,color="b", label="obs", marker="*", linestyle="-")
-	ctrl_.plot(ax=ax,color="g", label="ctrl", marker="*", linestyle="-")
-	exp_.plot(ax=ax,color="r", label="exp", marker="*", linestyle="-")
+	ctrl_.plot(ax=ax,color="g", label=f"ctrl {ctx.spec['control']}", marker="*", linestyle="-")
+	exp_.plot(ax=ax,color="r", label=f"exp {ctx.spec['experiment']}", marker="*", linestyle="-")
 	# add mean line
 	obs_mean = obs_.mean("time")
 	ctrl_mean = ctrl_.mean("time")
@@ -215,8 +215,8 @@ def save_co2_timeseries_and_diurnal(ctx: Context, *, level_m: float, fig_dir: st
 	exp_ = exp.sel(height=level_m).groupby("time.hour").mean("time")
 	fig, ax = plt.subplots(figsize=(7, 4))
 	obs_.plot(ax=ax, x="hour", label="obs", color="b")
-	ctrl_.plot(ax=ax, x="hour", label="ctrl", color="g")
-	exp_.plot(ax=ax, x="hour", label="exp", color="r")
+	ctrl_.plot(ax=ax, x="hour", label=f"ctrl {ctx.spec['control']}", color="g")
+	exp_.plot(ax=ax, x="hour", label=f"exp {ctx.spec['experiment']}", color="r")
 	# add mean line
 	obs_mean = obs_.mean("hour")
 	ctrl_mean = ctrl_.mean("hour")
@@ -238,7 +238,10 @@ def save_co2_timeseries_and_diurnal(ctx: Context, *, level_m: float, fig_dir: st
 
 
 def save_co2_mean_profiles(ctx: Context, *, fig_dir: str) -> list[str]:
-	"""Save mean daytime/nighttime CO2 profile plot with simple line fits."""
+	"""Save mean daytime/nighttime CO2 profile plot with simple line fits.
+
+	Produces a 2-panel figure: daytime (left) and nighttime (right).
+	"""
 	prefix = _fig_prefix(ctx.spec)
 	daytime = tuple(ctx.spec.get("daytime", [7, 20]))
 	nighttime = tuple(ctx.spec.get("nighttime", [20, 7]))
@@ -253,20 +256,18 @@ def save_co2_mean_profiles(ctx: Context, *, fig_dir: str) -> list[str]:
 	ctrl_night = sel_time_of_day(ctrl, nighttime)
 	exp_night = sel_time_of_day(exp, nighttime)
 
-	fig, ax = plt.subplots(figsize=(6.5, 6))
+	fig, (ax_day, ax_night) = plt.subplots(
+		nrows=1,
+		ncols=2,
+		figsize=(12.0, 6.0),
+		sharey=True,
+	)
 
-	def _plot_profile(da, label, style, color):
+	def _plot_profile(ax, da, label, style, color):
 		m = da.mean("time")
 		ax.plot(m.values, m["height"].values, style, label=label, color=color)
 
-	_plot_profile(obs_day, "obs day", "-*", "blue")
-	_plot_profile(ctrl_day, "ctrl day", "-*", "green")
-	_plot_profile(exp_day, "exp day", "-*", "red")
-	_plot_profile(obs_night, "obs night", "-o", "blue")
-	_plot_profile(ctrl_night, "ctrl night", "-o", "green")
-	_plot_profile(exp_night, "exp night", "-o", "red")
-
-	def _fit_line(mean_profile, label, color):
+	def _fit_line(ax, mean_profile, label, color):
 		x = np.asarray(mean_profile.values, dtype=float)
 		y = np.asarray(mean_profile["height"].values, dtype=float)
 		mask = np.isfinite(x) & np.isfinite(y)
@@ -276,17 +277,74 @@ def save_co2_mean_profiles(ctx: Context, *, fig_dir: str) -> list[str]:
 		line_x = slope * y + intercept
 		ax.plot(line_x, y, "--", color=color, label=f"{label} fit")
 
-	_fit_line(obs_day.mean("time"), "obs day", "blue")
-	_fit_line(ctrl_day.mean("time"), "ctrl day", "green")
-	_fit_line(exp_day.mean("time"), "exp day", "red")
-	_fit_line(obs_night.mean("time"), "obs night", "blue")
-	_fit_line(ctrl_night.mean("time"), "ctrl night", "green")
-	_fit_line(exp_night.mean("time"), "exp night", "red")
+	# Daytime panel
+	_plot_profile(ax_day, obs_day, "obs", "-*", "blue")
+	_plot_profile(ax_day, ctrl_day, f"ctrl {ctx.spec['control']}", "-*", "green")
+	_plot_profile(ax_day, exp_day, f"exp {ctx.spec['experiment']}", "-*", "red")
+	_fit_line(ax_day, obs_day.mean("time"), "obs", "blue")
+	_fit_line(ax_day, ctrl_day.mean("time"), f"ctrl {ctx.spec['control']}", "green")
+	_fit_line(ax_day, exp_day.mean("time"), f"exp {ctx.spec['experiment']}", "red")
+	
+	# Nighttime panel
+	_plot_profile(ax_night, obs_night, "obs", "-o", "blue")
+	_plot_profile(ax_night, ctrl_night, f"ctrl {ctx.spec['control']}", "-o", "green")
+	_plot_profile(ax_night, exp_night, f"exp {ctx.spec['experiment']}", "-o", "red")
+	_fit_line(ax_night, obs_night.mean("time"), "obs", "blue")
+	_fit_line(ax_night, ctrl_night.mean("time"), f"ctrl {ctx.spec['control']}", "green")
+	_fit_line(ax_night, exp_night.mean("time"), f"exp {ctx.spec['experiment']}", "red")
 
-	ax.set_ylabel("Height (m)")
-	ax.set_xlabel("CO2 Concentration (PPM)")
-	ax.set_title("Mean daytime and nighttime CO2 profile")
-	ax.legend(fontsize=8)
+	# Harmonize x-limits:
+	# - common left bound (xmin) across panels
+	# - right bounds differ by no more than 20 ppm (expand smaller xmax if needed)
+	def _finite_min_max(arrays: list[np.ndarray]) -> tuple[float, float]:
+		vals = np.concatenate([np.asarray(a, dtype=float).ravel() for a in arrays])
+		vals = vals[np.isfinite(vals)]
+		if vals.size == 0:
+			return (np.nan, np.nan)
+		return (float(vals.min()), float(vals.max()))
+
+	day_arrays = [
+		obs_day.mean("time").values,
+		ctrl_day.mean("time").values,
+		exp_day.mean("time").values,
+	]
+	night_arrays = [
+		obs_night.mean("time").values,
+		ctrl_night.mean("time").values,
+		exp_night.mean("time").values,
+	]
+	day_min, day_max = _finite_min_max(day_arrays)
+	night_min, night_max = _finite_min_max(night_arrays)
+	mins = [m for m in (day_min, night_min) if np.isfinite(m)]
+	if mins:
+		global_min = float(min(mins))
+		# Small padding for readability
+		xmin = global_min - 2.0
+		ax_day.set_xlim(left=xmin)
+		ax_night.set_xlim(left=xmin)
+
+	if np.isfinite(day_max) and np.isfinite(night_max):
+		# Apply a small padding, then cap xmax difference to <= 20 ppm by expanding the smaller panel.
+		pad = 2.0
+		xmax_day = day_max + pad
+		xmax_night = night_max + pad
+		if abs(xmax_day - xmax_night) > 20.0:
+			bigger = max(xmax_day, xmax_night)
+			# Increase the smaller to within 20 ppm of the bigger.
+			if xmax_day < bigger:
+				xmax_day = max(xmax_day, bigger - 20.0)
+			if xmax_night < bigger:
+				xmax_night = max(xmax_night, bigger - 20.0)
+		ax_day.set_xlim(right=xmax_day)
+		ax_night.set_xlim(right=xmax_night)
+
+	for ax, panel_title in [(ax_day, "Daytime"), (ax_night, "Nighttime")]:
+		ax.set_xlabel("CO2 Concentration (PPM)")
+		ax.set_title(panel_title)
+		ax.legend(fontsize=8)
+
+	ax_day.set_ylabel("Height (m)")
+	fig.suptitle("Mean CO2 profile", x=0.02, ha="left", fontsize=12)
 	fig.tight_layout()
 	out_path = os.path.join(fig_dir, f"co2_mean_profiles_{prefix}.png")
 	fig.savefig(out_path, dpi=200, bbox_inches="tight")
@@ -325,8 +383,8 @@ def save_co2_flux_timeseries(ctx: Context, *, level_m: float, fig_dir: str) -> l
 		markersize=3,
 		c="b",
 	)
-	ctrl.sel(height=level_m).plot(ax=ax,color="g", label=f"ctrl {int(level_m)}m", lw=2)
-	exp.sel(height=level_m).plot(ax=ax,color="r", label=f"exp {int(level_m)}m", lw=2)
+	ctrl.sel(height=level_m).plot(ax=ax,color="g", label=f"ctrl {ctx.spec['control']} {int(level_m)}m", lw=2)
+	exp.sel(height=level_m).plot(ax=ax,color="r", label=f"exp {ctx.spec['experiment']} {int(level_m)}m", lw=2)
 	# add mean flux line
 	obs_mean = obs.sel(height=level_m).mean("time")
 	ctrl_mean = ctrl.sel(height=level_m).mean("time")
@@ -374,8 +432,8 @@ def save_co2_surface_flux_timeseries(ctx: Context, *, fig_dir: str) -> list[str]
 		markersize=3,
 		c="b",
 	)
-	exp.plot(ax=ax, label="exp surface fluxes", lw=2,color="r")
-	ctrl.plot(ax=ax, label="ctrl surface fluxes", lw=2,color="g")
+	exp.plot(ax=ax, label=f"exp {ctx.spec['experiment']} surface fluxes", lw=2,color="r")
+	ctrl.plot(ax=ax, label=f"ctrl {ctx.spec['control']} surface fluxes", lw=2,color="g")
 	ax.legend()
 	ax.set_xlabel("Time")
 	out_path = os.path.join(fig_dir, f"co2_surface_flux_timeseries_{prefix}.png")
